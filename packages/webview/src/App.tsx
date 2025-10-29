@@ -26,6 +26,8 @@ import type {
   WorkflowNodeType,
   WorkflowEdgeModel,
   WorkflowDocument,
+  WorkflowRules,
+  WorkflowSnapshot,
 } from "./types";
 import "./styles.css";
 import "reactflow/dist/style.css";
@@ -38,6 +40,16 @@ type FlowEdgeChange = EdgeChange<undefined>;
 type FlowConnection = Connection<CanvasNodeData, undefined>;
 type FlowSelectionParams = OnSelectionChangeParams<CanvasNodeData, undefined>;
 type Theme = "dark" | "light";
+
+type WorkflowCommand =
+  | { kind: "new" }
+  | { kind: "addNode"; nodeType: WorkflowNodeType; nodeId?: string }
+  | { kind: "connect"; from: string; to: string }
+  | { kind: "setRules"; rules: WorkflowRules };
+
+type InboundMessage =
+  | { type: "workflow/replace"; payload: WorkflowSnapshot }
+  | { type: "workflow/applyCommands"; payload: WorkflowCommand[] };
 
 const DEFAULT_NODE_DIMENSIONS = {
   width: 260,
@@ -103,6 +115,7 @@ function App(): JSX.Element {
   });
   const [nodes, setNodes] = useState<FlowNode[]>(INITIAL_NODES);
   const [edges, setEdges] = useState<FlowEdge[]>(INITIAL_EDGES);
+  const [rules, setRules] = useState<WorkflowRules>(() => createDefaultRules());
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
   const [yamlContent, setYamlContent] = useState("");
   const [yamlDirty, setYamlDirty] = useState(false);
@@ -112,8 +125,6 @@ function App(): JSX.Element {
   const [isAutoLayoutRunning, setIsAutoLayoutRunning] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const elk = useMemo(() => new ELK(), []);
-
-  const rules = DEFAULT_RULES;
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -163,6 +174,135 @@ function App(): JSX.Element {
       setYamlContent(computedYaml);
     }
   }, [computedYaml, yamlDirty]);
+
+  const applySnapshot = useCallback((snapshot: WorkflowSnapshot) => {
+    const document = snapshot.document;
+    const nextNodes: FlowNode[] = document.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: node.position,
+      data: {
+        nodeType: node.type,
+        label: node.type === "LoginFormComponent" ? "Login Form" : "Login API",
+        props: node.props as LoginFormProps | LoginApiProps,
+      },
+    }));
+
+    const nextEdges: FlowEdge[] = document.connections.map((connection) =>
+      createEdge(connection.from, connection.to),
+    );
+
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setRules(cloneRules(document.rules));
+    setYamlContent(snapshot.yaml);
+    setYamlDirty(false);
+    setYamlError(null);
+    setSelectedNodeId(undefined);
+    setLayoutError(null);
+  }, []);
+
+  const applyCommands = useCallback(
+    (commands: WorkflowCommand[]) => {
+      if (!commands || commands.length === 0) {
+        return;
+      }
+
+      let nextNodes = [...nodes];
+      let nextEdges = [...edges];
+      let nextRules = cloneRules(rules);
+      let nextSelected = selectedNodeId;
+
+      commands.forEach((command) => {
+        switch (command.kind) {
+          case "new": {
+            nextNodes = [];
+            nextEdges = [];
+            nextRules = createDefaultRules();
+            nextSelected = undefined;
+            break;
+          }
+          case "addNode": {
+            const candidateId =
+              command.nodeId && command.nodeId.trim().length > 0
+                ? command.nodeId.trim()
+                : generateNodeId(command.nodeType, nextNodes);
+            if (nextNodes.some((node) => node.id === candidateId)) {
+              nextSelected = candidateId;
+              break;
+            }
+            const offset = nextNodes.length * 24;
+            const newNode: FlowNode = {
+              id: candidateId,
+              type: command.nodeType,
+              position: {
+                x: 200 + offset,
+                y: 160 + offset,
+              },
+              data: {
+                nodeType: command.nodeType,
+                label: command.nodeType === "LoginFormComponent" ? "Login Form" : "Login API",
+                props: createDefaultProps(command.nodeType) as LoginFormProps | LoginApiProps,
+              },
+            };
+            nextNodes = nextNodes.concat(newNode);
+            nextSelected = candidateId;
+            break;
+          }
+          case "connect": {
+            const sourceExists = nextNodes.some((node) => node.id === command.from);
+            const targetExists = nextNodes.some((node) => node.id === command.to);
+            const alreadyConnected = nextEdges.some(
+              (edge) => edge.source === command.from && edge.target === command.to,
+            );
+            if (sourceExists && targetExists && !alreadyConnected) {
+              nextEdges = nextEdges.concat(createEdge(command.from, command.to));
+            }
+            break;
+          }
+          case "setRules": {
+            nextRules = cloneRules(command.rules);
+            break;
+          }
+          default:
+            break;
+        }
+      });
+
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      setRules(nextRules);
+      setSelectedNodeId(nextSelected);
+      setYamlDirty(false);
+      setYamlError(null);
+      setLayoutError(null);
+    },
+    [edges, nodes, rules, selectedNodeId],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent<InboundMessage>) => {
+      const message = event.data;
+      if (!message || typeof message !== "object" || typeof message.type !== "string") {
+        return;
+      }
+
+      if (message.type === "workflow/replace") {
+        applySnapshot(message.payload);
+      } else if (message.type === "workflow/applyCommands") {
+        applyCommands(message.payload ?? []);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [applyCommands, applySnapshot]);
 
   const onNodesChange = useCallback((changes: FlowNodeChange[]) => {
     setNodes((current: FlowNode[]) => {
@@ -379,6 +519,7 @@ function App(): JSX.Element {
 
       setNodes(nextNodes);
       setEdges(nextEdges);
+      setRules(cloneRules(parsed.rules));
       setYamlDirty(false);
       setYamlError(null);
       setSelectedNodeId(undefined);
@@ -713,6 +854,18 @@ function toWorkflowEdges(edges: FlowEdge[]): WorkflowEdgeModel[] {
       from: edge.source,
       to: edge.target,
     }));
+}
+
+function cloneRules(rules: WorkflowRules): WorkflowRules {
+  return {
+    frontend: { ...rules.frontend },
+    backend: { ...rules.backend },
+    coding: { ...rules.coding },
+  };
+}
+
+function createDefaultRules(): WorkflowRules {
+  return cloneRules(DEFAULT_RULES);
 }
 
 export default App;

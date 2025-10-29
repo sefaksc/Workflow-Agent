@@ -9,6 +9,19 @@ interface EngineGeneratedFile {
   content: string;
 }
 
+export type EngineChatAction =
+  | { type: "new_workflow" }
+  | { type: "add_node"; nodeType: "LoginFormComponent" | "LoginAPIEndpoint"; nodeId?: string }
+  | { type: "connect"; from: string; to: string }
+  | { type: "set_rules"; rules: WorkflowSnapshot["document"]["rules"] }
+  | { type: "run_workflow" };
+
+export interface EngineChatResponse {
+  messages: string[];
+  actions: EngineChatAction[];
+  followUps?: string[];
+}
+
 interface RunWorkflowMessage {
   type: "RUN_WORKFLOW";
   correlationId: string;
@@ -26,6 +39,16 @@ interface CancelMessage {
 
 interface PingMessage {
   type: "PING";
+}
+
+interface ChatRequestMessage {
+  type: "CHAT_REQUEST";
+  correlationId: string;
+  prompt: string;
+  workflow?: {
+    document: EngineWorkflowDocument;
+    yaml: string;
+  };
 }
 
 type EngineInboundMessage =
@@ -62,6 +85,13 @@ type EngineInboundMessage =
       correlationId: string;
       question: string;
       fields?: Array<{ name: string; label: string; type: string }>;
+    }
+  | {
+      type: "CHAT_RESPONSE";
+      correlationId: string;
+      reply: string[];
+      actions: EngineChatAction[];
+      followUps?: string[];
     };
 
 export interface RunWorkflowResult {
@@ -85,6 +115,11 @@ interface PendingPing {
   timeout: NodeJS.Timeout;
 }
 
+interface PendingChat {
+  resolve: (value: EngineChatResponse) => void;
+  reject: (error: Error) => void;
+}
+
 export class EngineClient {
   private child: ChildProcessWithoutNullStreams | undefined;
   private stdoutBuffer = "";
@@ -94,6 +129,7 @@ export class EngineClient {
   private readyPromise: Promise<void> | undefined;
   private activeRun: PendingRun | undefined;
   private pendingPings: PendingPing[] = [];
+  private pendingChats = new Map<string, PendingChat>();
   private disposed = false;
 
   constructor(
@@ -164,6 +200,38 @@ export class EngineClient {
     return promise;
   }
 
+  public async sendChatPrompt(
+    prompt: string,
+    snapshot: WorkflowSnapshot | undefined,
+  ): Promise<EngineChatResponse> {
+    await this.ensureStarted();
+    await this.ping();
+
+    const correlationId = randomUUID();
+    const document = snapshot ? toEngineWorkflow(snapshot) : undefined;
+    const message: ChatRequestMessage = {
+      type: "CHAT_REQUEST",
+      correlationId,
+      prompt,
+      workflow: document
+        ? {
+            document,
+            yaml: snapshot!.yaml,
+          }
+        : undefined,
+    };
+
+    return new Promise<EngineChatResponse>((resolve, reject) => {
+      this.pendingChats.set(correlationId, { resolve, reject });
+      try {
+        this.sendMessage(message);
+      } catch (error) {
+        this.pendingChats.delete(correlationId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   public dispose(): void {
     this.disposed = true;
     for (const pending of this.pendingPings) {
@@ -176,6 +244,11 @@ export class EngineClient {
       this.activeRun.reject(new Error("Engine client disposed."));
       this.activeRun = undefined;
     }
+
+    this.pendingChats.forEach((pending, correlationId) => {
+      pending.reject(new Error("Engine client disposed."));
+      this.pendingChats.delete(correlationId);
+    });
 
     if (this.child) {
       this.child.removeAllListeners();
@@ -271,6 +344,10 @@ export class EngineClient {
       pending.reject(new Error("Engine process exited."));
     }
     this.pendingPings = [];
+    this.pendingChats.forEach((pending, correlationId) => {
+      pending.reject(new Error("Engine process exited."));
+      this.pendingChats.delete(correlationId);
+    });
   }
 
   private processStdout(): void {
@@ -353,9 +430,28 @@ export class EngineClient {
           const error = new Error(parsed.message || "Engine reported an error.");
           this.activeRun.reject(error);
           this.activeRun = undefined;
+        } else if (parsed.correlationId && this.pendingChats.has(parsed.correlationId)) {
+          const pending = this.pendingChats.get(parsed.correlationId);
+          if (pending) {
+            pending.reject(new Error(parsed.message || "Engine reported an error."));
+            this.pendingChats.delete(parsed.correlationId);
+          }
         } else {
           const message = parsed.message || "Engine reported an error.";
           void vscode.window.showErrorMessage(message);
+        }
+        break;
+      }
+      case "CHAT_RESPONSE": {
+        const pending = this.pendingChats.get(parsed.correlationId);
+        if (pending) {
+          const response: EngineChatResponse = {
+            messages: parsed.reply ?? [],
+            actions: parsed.actions ?? [],
+            followUps: parsed.followUps,
+          };
+          pending.resolve(response);
+          this.pendingChats.delete(parsed.correlationId);
         }
         break;
       }
@@ -373,7 +469,9 @@ export class EngineClient {
     }
   }
 
-  private sendMessage<T extends PingMessage | CancelMessage | RunWorkflowMessage>(message: T): void {
+  private sendMessage<
+    T extends PingMessage | CancelMessage | RunWorkflowMessage | ChatRequestMessage,
+  >(message: T): void {
     if (!this.child || !this.child.stdin.writable) {
       throw new Error("Engine process is not available.");
     }

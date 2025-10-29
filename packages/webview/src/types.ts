@@ -72,3 +72,9 @@ export interface CanvasNodeSnapshot {
   id: string;
   data: CanvasNodeData;
 }
+
+export interface WorkflowSnapshot {
+  document: WorkflowDocument;
+  yaml: string;
+  generatedAt: string;
+}

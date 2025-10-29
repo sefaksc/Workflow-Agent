@@ -12,7 +12,8 @@
   ],
   "activationEvents": [
     "onCommand:workflowAgent.openWorkflowCanvas",
-    "onCommand:workflowAgent.runWorkflow"
+    "onCommand:workflowAgent.runWorkflow",
+    "onChatParticipant:workflowAgent"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -24,6 +25,38 @@
       {
         "command": "workflowAgent.runWorkflow",
         "title": "Workflow Agent: Run Workflow"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "workflowAgent",
+        "name": "workflowAgent",
+        "title": "Workflow Agent"
+      }
+    ],
+    "slashCommands": [
+      {
+        "command": "workflowAgent.new",
+        "title": "Yeni boş workflow oluştur"
+      },
+      {
+        "command": "workflowAgent.addNode",
+        "title": "Yeni node ekle",
+        "detail": "/add node LoginForm|LoginAPI [Id]"
+      },
+      {
+        "command": "workflowAgent.connect",
+        "title": "İki node'u bağla",
+        "detail": "/connect <kaynakId> <hedefId>"
+      },
+      {
+        "command": "workflowAgent.rules",
+        "title": "Kuralları ayarla",
+        "detail": "/rules language ts|js"
+      },
+      {
+        "command": "workflowAgent.run",
+        "title": "Workflow'u çalıştır"
       }
     ]
   },

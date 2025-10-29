@@ -3,9 +3,12 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { EngineClient } from "./engineClient";
+import { registerChatAgent } from "./chatAgent";
+import { WorkflowPanelManager } from "./panelManager";
 import { WorkflowStore, isWorkflowUpdateMessage } from "./workflowStore";
 
 const workflowStore = new WorkflowStore();
+const panelManager = new WorkflowPanelManager();
 let engineClient: EngineClient | undefined;
 let engineConfig:
   | {
@@ -37,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
           localResourceRoots: getWebviewResourceRoots(context),
         },
       );
+      panelManager.register(panel);
 
       try {
         const html = await loadWebviewHtml(context, panel.webview);
@@ -55,6 +59,16 @@ export function activate(context: vscode.ExtensionContext): void {
           workflowStore.update(message.payload);
         }
       });
+
+      const snapshot = workflowStore.getSnapshot();
+      if (snapshot) {
+        setTimeout(() => {
+          panelManager.postMessage({
+            type: "workflow/replace",
+            payload: snapshot,
+          });
+        }, 0);
+      }
     },
   );
 
@@ -69,35 +83,9 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const location = resolveEngineLocation(context);
-      if (!location) {
+      const engine = ensureEngine(context);
+      if (!engine) {
         return;
-      }
-
-      const pythonSetting = vscode.workspace
-        .getConfiguration("workflowAgent")
-        .get<string>("pythonPath");
-      const pythonExecutable = pythonSetting ?? "python";
-
-      const nextConfig = {
-        pythonExecutable,
-        enginePath: location.enginePath,
-        cwd: location.cwd,
-      };
-
-      if (!engineClient || !engineConfig || !engineConfigsEqual(engineConfig, nextConfig)) {
-        engineClient?.dispose();
-        if (!outputChannel) {
-          outputChannel = vscode.window.createOutputChannel("Workflow Agent");
-          context.subscriptions.push(outputChannel);
-        }
-        engineClient = new EngineClient(
-          nextConfig.pythonExecutable,
-          nextConfig.enginePath,
-          nextConfig.cwd,
-          outputChannel,
-        );
-        engineConfig = nextConfig;
       }
 
       try {
@@ -109,13 +97,9 @@ export function activate(context: vscode.ExtensionContext): void {
           },
           async (progress, token) => {
             progress.report({ message: "Preparing workflow..." });
-            if (!engineClient) {
-              throw new Error("Engine client is not available.");
-            }
-
             let result;
             try {
-              result = await engineClient.runWorkflow(snapshot, progress, token);
+              result = await engine.runWorkflow(snapshot, progress, token);
             } catch (error) {
               const message =
                 error instanceof Error
@@ -161,6 +145,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     },
   );
+
+  registerChatAgent(context, workflowStore, panelManager, () => Promise.resolve(ensureEngine(context)));
 
   context.subscriptions.push(openCanvas, runWorkflow);
 }
@@ -313,6 +299,41 @@ function pathExists(candidate: string): boolean {
   } catch {
     return false;
   }
+}
+
+function ensureEngine(context: vscode.ExtensionContext): EngineClient | undefined {
+  const location = resolveEngineLocation(context);
+  if (!location) {
+    return undefined;
+  }
+
+  const pythonSetting = vscode.workspace
+    .getConfiguration("workflowAgent")
+    .get<string>("pythonPath");
+  const pythonExecutable = pythonSetting ?? "python";
+
+  const nextConfig = {
+    pythonExecutable,
+    enginePath: location.enginePath,
+    cwd: location.cwd,
+  };
+
+  if (!engineClient || !engineConfig || !engineConfigsEqual(engineConfig, nextConfig)) {
+    engineClient?.dispose();
+    if (!outputChannel) {
+      outputChannel = vscode.window.createOutputChannel("Workflow Agent");
+      context.subscriptions.push(outputChannel);
+    }
+    engineClient = new EngineClient(
+      nextConfig.pythonExecutable,
+      nextConfig.enginePath,
+      nextConfig.cwd,
+      outputChannel,
+    );
+    engineConfig = nextConfig;
+  }
+
+  return engineClient;
 }
 
 function engineConfigsEqual(

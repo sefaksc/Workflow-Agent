@@ -24,6 +24,7 @@ in the same format.
 | `COMPLETE`| Workflow run finished. Carries generated `files[]`, optional `warnings[]`, and `cancelled`.  |
 | `ERROR`   | Non-recoverable failure. May include optional `correlationId` to associate with a run.       |
 | `ASK_USER`| Placeholder for future human-in-the-loop prompts (not acted upon in sprint 4).               |
+| `CHAT_RESPONSE` | Result of a chat prompt. Includes assistant `reply[]`, tool `actions[]`, and hints.    |
 
 ### Extension → Engine
 
@@ -32,6 +33,7 @@ in the same format.
 | `PING`         | Liveness probe. Engine must respond with `PONG`.                           |
 | `RUN_WORKFLOW` | Starts code generation. Carries workflow snapshot and settings.            |
 | `CANCEL`       | Requests cancellation for an in-flight run by `correlationId`.             |
+| `CHAT_REQUEST` | Natural-language prompt for the chat agent.                                |
 
 ## RUN_WORKFLOW Payload
 
@@ -97,6 +99,49 @@ Notes:
 - Positions are included for future layout-sensitive processing.
 - The `yaml` string mirrors the document for audit/debugging.
 
+## CHAT_REQUEST Payload
+
+```jsonc
+{
+  "type": "CHAT_REQUEST",
+  "correlationId": "uuid-v4",
+  "prompt": "login form ekle ve api ile bağla",
+  "workflow": {
+    "document": { "...": "current engine workflow document" },
+    "yaml": "version: 1\nnodes: []\nconnections: []\n"
+  }
+}
+```
+
+- `workflow` is optional; when present it gives the engine context to derive IDs and rules.
+- The extension forwards the most recent canvas snapshot (if any).
+
+## CHAT_RESPONSE Payload
+
+```jsonc
+{
+  "type": "CHAT_RESPONSE",
+  "correlationId": "uuid-v4",
+  "reply": [
+    "LoginForm2 form düğümünü ekliyorum.",
+    "LoginForm2 düğümünü LoginAPI1 düğümüne bağlıyorum."
+  ],
+  "actions": [
+    { "type": "add_node", "nodeType": "LoginFormComponent", "nodeId": "LoginForm2" },
+    { "type": "connect", "from": "LoginForm2", "to": "LoginAPI1" }
+  ],
+  "followUps": ["Workflow'u çalıştırmak için `/run` yazabilirsin."]
+}
+```
+
+Action semantics:
+
+- `new_workflow` → extension clears canvas/yaml.
+- `add_node` → new node is appended (ID optional; otherwise extension generates one).
+- `connect` → create an edge between two nodes.
+- `set_rules` → replace workflow rules object.
+- `run_workflow` → extension invokes the existing run command after mutations settle.
+
 ## PROGRESS Payload
 
 ```jsonc
@@ -153,6 +198,14 @@ Engine     → {"type":"PROGRESS","step":"Finalising results","pct":100,"correla
 Engine     → {"type":"COMPLETE","files":[...],"correlationId":"..."}
 ```
 
-This document captures the sprint 4 protocol contract shared between the extension
-and the Python engine. Later sprints will extend it with interactive prompts and
-file system actions.
+### Chat Example
+
+```
+Extension → {"type":"CHAT_REQUEST","correlationId":"1","prompt":"login form ekle ve api ile bağla","workflow":{...}}
+Engine     → {"type":"CHAT_RESPONSE","correlationId":"1","reply":["LoginForm2 form düğümünü ekliyorum.","LoginForm2 düğümünü LoginAPI1 düğümüne bağlıyorum."],"actions":[{"type":"add_node","nodeType":"LoginFormComponent","nodeId":"LoginForm2"},{"type":"connect","from":"LoginForm2","to":"LoginAPI1"}]}
+Extension → {applies commands to canvas, then optionally `{"type":"RUN_WORKFLOW", ...}`}
+```
+
+This document captures the sprint 5 protocol surface shared between the
+extension and the Python engine. Later sprints will extend it with interactive
+ask-user loops and real file system actions.
