@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from .nodes import login_api, login_form
 
@@ -176,7 +176,8 @@ class TemplateWorkflowRunner:
             style_key = form.style_library.strip().lower()
             if style_key and style_key not in SUPPORTED_STYLE_LIBRARIES:
                 context.warnings.append(
-                    f"{form.id} uses unsupported style library {form.style_library!r}; generating standard HTML form."
+                    f"{form.id} uses unsupported style library {form.style_library!r}; "
+                    "generating standard HTML form."
                 )
 
             descriptors = [
@@ -339,7 +340,9 @@ class TemplateWorkflowRunner:
 
         field_type = str(payload.get("type") or "string")
         if field_type not in {"string", "password", "email"}:
-            raise DocumentValidationError(f"{node_id} field {name!r} has unsupported type {field_type!r}.")
+            raise DocumentValidationError(
+                f"{node_id} field {name!r} has unsupported type {field_type!r}."
+            )
 
         required_raw = payload.get("required")
         if isinstance(required_raw, bool):
@@ -358,7 +361,7 @@ def _normalise_position(candidate: Any) -> dict[str, Any]:
     if isinstance(candidate, dict):
         x = candidate.get("x")
         y = candidate.get("y")
-        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        if isinstance(x, float | int) and isinstance(y, float | int):
             return {"x": x, "y": y}
     return {"x": 0, "y": 0}
 
@@ -411,7 +414,7 @@ def _split_identifier(value: str) -> list[str]:
 
 def _parse_node_id(payload: dict[str, Any]) -> str:
     node_id = payload.get("id")
-    if not isinstance(node_id, (str, int)):
+    if not isinstance(node_id, str | int):
         raise DocumentValidationError("Each node must include an `id` string.")
     return str(node_id)
 

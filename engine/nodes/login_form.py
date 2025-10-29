@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from .utils import (
     bool_literal,
@@ -131,7 +131,10 @@ def _render_field_metadata(fields: Sequence[Mapping[str, object]], is_ts: bool) 
 
     if not field_entries:
         field_entries = [
-            '  { name: "username", label: "Username", type: "text", required: true, autoComplete: "username" },'
+            (
+                '  { name: "username", label: "Username", type: "text", '
+                'required: true, autoComplete: "username" },'
+            )
         ]
 
     closing = "] as const;" if is_ts else "];"
@@ -187,7 +190,8 @@ def _render_component_body(
     lines: list[str] = []
     if is_ts:
         lines.append(
-            f"export function {component_name}({{ onSubmit }}: {component_name}Props): JSX.Element {{"
+            f"export function {component_name}({{ onSubmit }}: {component_name}Props): "
+            "JSX.Element {"
         )
     else:
         lines.append(f"export function {component_name}({{ onSubmit }}) {{")
@@ -204,7 +208,8 @@ def _render_component_body(
     lines.append("")
     if is_ts:
         lines.append(
-            "  const handleChange = (field: FieldName) => (event: ChangeEvent<HTMLInputElement>) => {"
+            "  const handleChange = (field: FieldName) => "
+            "(event: ChangeEvent<HTMLInputElement>) => {"
         )
     else:
         lines.append("  const handleChange = (field) => (event) => {")
@@ -217,7 +222,9 @@ def _render_component_body(
         lines.append("  const handleSubmit = (event) => {")
     lines.append("    event.preventDefault();")
     lines.append(
-        "    const missing = requiredFieldNames.filter((field) => values[field].trim().length === 0);"
+        "    const missing = requiredFieldNames.filter("
+        "(field) => values[field].trim().length === 0"
+        ");"
     )
     lines.append("    if (missing.length > 0) {")
     lines.append("      setErrors(missing);")

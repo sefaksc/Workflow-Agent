@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from .utils import ensure_identifier, join_lines, property_literal, quote_string, to_snake_case
 
@@ -158,7 +158,10 @@ def _render_helpers(*, payload_type_name: str, is_ts: bool) -> list[str]:
     lines.append("}")
     lines.append("")
     if is_ts:
-        lines.append(f"function collectMissingFields(payload: Partial<{payload_type_name}>): RequiredField[] {{")
+        lines.append(
+            f"function collectMissingFields(payload: Partial<{payload_type_name}>): "
+            "RequiredField[] {"
+        )
     else:
         lines.append("function collectMissingFields(payload) {")
     lines.append("  return REQUIRED_FIELDS.filter((field) => {")
@@ -174,7 +177,10 @@ def _render_helpers(*, payload_type_name: str, is_ts: bool) -> list[str]:
     lines.append("}")
     lines.append("")
     if is_ts:
-        lines.append(f"function normalisePayload(payload: Partial<{payload_type_name}>): Record<string, string> {{")
+        lines.append(
+            f"function normalisePayload(payload: Partial<{payload_type_name}>): "
+            "Record<string, string> {"
+        )
     else:
         lines.append("function normalisePayload(payload) {")
     if is_ts:
