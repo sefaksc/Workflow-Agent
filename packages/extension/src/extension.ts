@@ -1,15 +1,30 @@
 import * as fsSync from "node:fs";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
 import * as vscode from "vscode";
+import { EngineClient } from "./engineClient";
+import { WorkflowStore, isWorkflowUpdateMessage } from "./workflowStore";
 
-type EngineDiagnostics = {
-  status: string;
-  llamaIndexAvailable: boolean;
-};
+const workflowStore = new WorkflowStore();
+let engineClient: EngineClient | undefined;
+let engineConfig:
+  | {
+      pythonExecutable: string;
+      enginePath: string;
+      cwd: string;
+    }
+  | undefined;
+let outputChannel: vscode.OutputChannel | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  outputChannel = vscode.window.createOutputChannel("Workflow Agent");
+  context.subscriptions.push(outputChannel);
+  context.subscriptions.push(
+    new vscode.Disposable(() => {
+      engineClient?.dispose();
+    }),
+  );
+
   const openCanvas = vscode.commands.registerCommand(
     "workflowAgent.openWorkflowCanvas",
     async () => {
@@ -34,13 +49,116 @@ export function activate(context: vscode.ExtensionContext): void {
           "The workflow canvas bundle is missing. Run `npm run build --workspace workflow-agent-webview` and try again.",
         );
       }
+
+      panel.webview.onDidReceiveMessage((message: unknown) => {
+        if (isWorkflowUpdateMessage(message)) {
+          workflowStore.update(message.payload);
+        }
+      });
     },
   );
 
   const runWorkflow = vscode.commands.registerCommand(
     "workflowAgent.runWorkflow",
     async () => {
-      await runEngineCheck(context);
+      const snapshot = workflowStore.getSnapshot();
+      if (!snapshot) {
+        void vscode.window.showInformationMessage(
+          "Open the workflow canvas and make an edit before running the workflow.",
+        );
+        return;
+      }
+
+      const location = resolveEngineLocation(context);
+      if (!location) {
+        return;
+      }
+
+      const pythonSetting = vscode.workspace
+        .getConfiguration("workflowAgent")
+        .get<string>("pythonPath");
+      const pythonExecutable = pythonSetting ?? "python";
+
+      const nextConfig = {
+        pythonExecutable,
+        enginePath: location.enginePath,
+        cwd: location.cwd,
+      };
+
+      if (!engineClient || !engineConfig || !engineConfigsEqual(engineConfig, nextConfig)) {
+        engineClient?.dispose();
+        if (!outputChannel) {
+          outputChannel = vscode.window.createOutputChannel("Workflow Agent");
+          context.subscriptions.push(outputChannel);
+        }
+        engineClient = new EngineClient(
+          nextConfig.pythonExecutable,
+          nextConfig.enginePath,
+          nextConfig.cwd,
+          outputChannel,
+        );
+        engineConfig = nextConfig;
+      }
+
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Workflow Agent: Running workflow",
+            cancellable: true,
+          },
+          async (progress, token) => {
+            progress.report({ message: "Preparing workflow..." });
+            if (!engineClient) {
+              throw new Error("Engine client is not available.");
+            }
+
+            let result;
+            try {
+              result = await engineClient.runWorkflow(snapshot, progress, token);
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "The workflow run failed due to an unexpected error.";
+              outputChannel?.appendLine(`Run failed: ${message}`);
+              void vscode.window.showErrorMessage(message);
+              return;
+            }
+
+            if (result.cancelled) {
+              outputChannel?.appendLine("Workflow run cancelled by user.");
+              void vscode.window.showWarningMessage("Workflow run cancelled.");
+              return;
+            }
+
+            const fileCount = result.files.length;
+            outputChannel?.appendLine(`Workflow run completed. Generated ${fileCount} file(s):`);
+            for (const file of result.files) {
+              outputChannel?.appendLine(`  - ${file.path}`);
+            }
+            if (result.warnings?.length) {
+              outputChannel?.appendLine("Warnings:");
+              for (const warning of result.warnings) {
+                outputChannel?.appendLine(`  • ${warning}`);
+              }
+            }
+            const summary = `Workflow completed. Generated ${fileCount} file${fileCount === 1 ? "" : "s"}. See the Workflow Agent output for details.`;
+            void vscode.window.showInformationMessage(summary, "Open Output").then((selection) => {
+              if (selection === "Open Output") {
+                outputChannel?.show(true);
+              }
+            });
+          },
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error prevented the workflow from running.";
+        outputChannel?.appendLine(`Run aborted: ${message}`);
+        void vscode.window.showErrorMessage(message);
+      }
     },
   );
 
@@ -48,7 +166,9 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // Nothing to clean up yet.
+  engineClient?.dispose();
+  engineClient = undefined;
+  engineConfig = undefined;
 }
 
 function getWebviewPlaceholderHtml(message?: string): string {
@@ -69,105 +189,6 @@ function getWebviewPlaceholderHtml(message?: string): string {
       </body>
     </html>
   `;
-}
-
-async function runEngineCheck(context: vscode.ExtensionContext): Promise<void> {
-  const location = resolveEngineLocation(context);
-  if (!location) {
-    return;
-  }
-
-  const pythonSetting = vscode.workspace
-    .getConfiguration("workflowAgent")
-    .get<string>("pythonPath");
-  const pythonExecutable = pythonSetting ?? "python";
-
-  const diagnostics = await executeEngineCheck(
-    pythonExecutable,
-    location.enginePath,
-    location.cwd,
-  );
-  if (!diagnostics) {
-    return;
-  }
-
-  const message = diagnostics.llamaIndexAvailable
-    ? "Python environment looks good. LlamaIndex is available."
-    : "Python environment detected, but LlamaIndex is not installed.";
-
-  void vscode.window.showInformationMessage(message);
-}
-
-function executeEngineCheck(
-  pythonExecutable: string,
-  enginePath: string,
-  cwd: string,
-): Promise<EngineDiagnostics | undefined> {
-  return new Promise((resolve) => {
-    const child = spawn(pythonExecutable, [enginePath, "--check"], {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on("error", (error: Error) => {
-      void vscode.window.showErrorMessage(
-        `Failed to execute Python: ${error.message}`,
-      );
-      resolve(undefined);
-    });
-
-    child.on("close", (code: number | null) => {
-      if (code !== 0) {
-        const details = stderr.trim() || stdout.trim() || "Unknown error";
-        void vscode.window.showErrorMessage(
-          `Engine diagnostics exited with code ${code}. ${details}`,
-        );
-        resolve(undefined);
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(stdout) as unknown;
-        if (!isEngineDiagnostics(parsed)) {
-          throw new Error("Invalid payload");
-        }
-        resolve(parsed);
-      } catch {
-        void vscode.window.showErrorMessage(
-          "Could not parse engine diagnostics output.",
-        );
-        resolve(undefined);
-      }
-    });
-  });
-}
-
-function isEngineDiagnostics(value: unknown): value is EngineDiagnostics {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "status" in value &&
-    "llamaIndexAvailable" in value
-  ) {
-    const record = value as Record<string, unknown>;
-    return (
-      typeof record.status === "string" &&
-      typeof record.llamaIndexAvailable === "boolean"
-    );
-  }
-
-  return false;
 }
 
 async function loadWebviewHtml(
@@ -292,4 +313,11 @@ function pathExists(candidate: string): boolean {
   } catch {
     return false;
   }
+}
+
+function engineConfigsEqual(
+  a: { pythonExecutable: string; enginePath: string; cwd: string },
+  b: { pythonExecutable: string; enginePath: string; cwd: string },
+): boolean {
+  return a.pythonExecutable === b.pythonExecutable && a.enginePath === b.enginePath && a.cwd === b.cwd;
 }

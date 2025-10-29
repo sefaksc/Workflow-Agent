@@ -16,11 +16,7 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import Canvas from "./components/Canvas";
 import PropertiesPanel from "./components/PropertiesPanel";
 import YamlPanel from "./components/YamlPanel";
-import {
-  DEFAULT_RULES,
-  parseWorkflowYaml,
-  serializeWorkflow,
-} from "./yaml";
+import { DEFAULT_RULES, parseWorkflowYaml, serializeWorkflow } from "./yaml";
 import type {
   CanvasNodeData,
   CanvasNodeSnapshot,
@@ -29,9 +25,11 @@ import type {
   WorkflowNodeModel,
   WorkflowNodeType,
   WorkflowEdgeModel,
+  WorkflowDocument,
 } from "./types";
 import "./styles.css";
 import "reactflow/dist/style.css";
+import { postMessage } from "./webviewBridge";
 
 type FlowNode = Node<CanvasNodeData>;
 type FlowEdge = Edge<undefined>;
@@ -141,6 +139,24 @@ function App(): JSX.Element {
     () => serializeWorkflow(workflowNodes, workflowEdges, rules),
     [workflowNodes, workflowEdges, rules],
   );
+
+  useEffect(() => {
+    const workflowDocument: WorkflowDocument = {
+      version: 1,
+      nodes: workflowNodes,
+      connections: workflowEdges.map(({ from, to }) => ({ from, to })),
+      rules,
+    };
+
+    postMessage({
+      type: "workflow/update",
+      payload: {
+        document: workflowDocument,
+        yaml: computedYaml,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  }, [workflowNodes, workflowEdges, rules, computedYaml]);
 
   useEffect(() => {
     if (!yamlDirty) {
