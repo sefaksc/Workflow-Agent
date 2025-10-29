@@ -1,4 +1,4 @@
-## Sprint 1 — Proje İskeleti & Geliştirme Altyapısı
+﻿## Sprint 1 — Proje İskeleti & Geliştirme Altyapısı
 
 🎯 Hedef
 
@@ -93,6 +93,7 @@ docs/protocol.md
 TS bridge + Py stdio handler
 
 RUN_WORKFLOW → sahte files[] döndür (LLM yok)
+Canvas bağlantılarından form alanlarını hedef API node'una ön işleme (Sprint 6 hazırlığı)
 
 📦 Artefakt
 
@@ -147,6 +148,7 @@ engine/workflow.py: Start → GenerateUI → GenerateAPI → Synthesize → Stop
 nodes/login_form.py, nodes/login_api.py (şablon bazlı)
 
 Rules → şablona enjekte (TS/JS, MUI, dosya yolları)
+Canvas bağlantılarına göre form alanlarını Login API schema taslağına map et
 
 📦 Artefakt
 
@@ -164,13 +166,14 @@ Sprint 4
 
 🎯 Hedef
 
-LLM tabanlı kod üretimi (OpenAI vb.), prompt şablonları, parçalı üretim & merge
+LLM tabanlı kod üretimi (OpenAI vb.), prompt şablonları, parçalı üretim & merge; form→API mapping mantığını yeni node tipleriyle genelle
 
 Görevler
 
 Settings: model, max tokens, API key (SecretStorage)
 
 prompts/: UI/API için sistem/rol/format şablonları; rules+props enjeksiyonu
+Canvas bağlantılarından gelen veri akışını tüm yeni node tiplerinde kullanılacak genel mapping katmanı olarak uygula
 
 Parçalı üretim (component/styles/hook) → merge.py
 

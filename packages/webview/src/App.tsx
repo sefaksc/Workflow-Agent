@@ -9,8 +9,10 @@ import {
   type NodeChange,
   ReactFlowProvider,
   type OnSelectionChangeParams,
+  type ReactFlowInstance,
 } from "reactflow";
 import { nanoid } from "nanoid";
+import ELK from "elkjs/lib/elk.bundled.js";
 import Canvas from "./components/Canvas";
 import PropertiesPanel from "./components/PropertiesPanel";
 import YamlPanel from "./components/YamlPanel";
@@ -37,6 +39,12 @@ type FlowNodeChange = NodeChange<CanvasNodeData>;
 type FlowEdgeChange = EdgeChange<undefined>;
 type FlowConnection = Connection<CanvasNodeData, undefined>;
 type FlowSelectionParams = OnSelectionChangeParams<CanvasNodeData, undefined>;
+type Theme = "dark" | "light";
+
+const DEFAULT_NODE_DIMENSIONS = {
+  width: 260,
+  height: 140,
+} as const;
 
 
 const INITIAL_NODES: FlowNode[] = [
@@ -84,6 +92,17 @@ const INITIAL_EDGES: FlowEdge[] = [
 ];
 
 function App(): JSX.Element {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") {
+      return "dark";
+    }
+    const stored = window.localStorage.getItem("workflowAgentTheme");
+    if (stored === "light" || stored === "dark") {
+      return stored;
+    }
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  });
   const [nodes, setNodes] = useState<FlowNode[]>(INITIAL_NODES);
   const [edges, setEdges] = useState<FlowEdge[]>(INITIAL_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
@@ -91,8 +110,22 @@ function App(): JSX.Element {
   const [yamlDirty, setYamlDirty] = useState(false);
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [yamlReadOnly, setYamlReadOnly] = useState(true);
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [isAutoLayoutRunning, setIsAutoLayoutRunning] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const elk = useMemo(() => new ELK(), []);
 
   const rules = DEFAULT_RULES;
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.style.colorScheme = theme;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("workflowAgentTheme", theme);
+    }
+  }, [theme]);
 
   const workflowNodes = useMemo(
     () => toWorkflowNodes(nodes),
@@ -344,6 +377,84 @@ function App(): JSX.Element {
     setYamlError(null);
   }, [computedYaml]);
 
+  const handleToggleTheme = useCallback(() => {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }, []);
+
+  const handleFitView = useCallback(() => {
+    reactFlowInstance?.fitView({ padding: 0.24, duration: 500 });
+  }, [reactFlowInstance]);
+
+  const handleAutoLayout = useCallback(async () => {
+    if (isAutoLayoutRunning) {
+      return;
+    }
+
+    if (nodes.length === 0) {
+      setLayoutError("Auto-layout için en az bir düğüm ekleyin.");
+      return;
+    }
+
+    setIsAutoLayoutRunning(true);
+    setLayoutError(null);
+
+    const graph = {
+      id: "root",
+      layoutOptions: {
+        "elk.algorithm": "layered",
+        "elk.direction": "RIGHT",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "120",
+        "elk.spacing.nodeNode": "90",
+        "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+        "elk.spacing.edgeNode": "60",
+      },
+      children: nodes.map((node) => ({
+        id: node.id,
+        width: DEFAULT_NODE_DIMENSIONS.width,
+        height: DEFAULT_NODE_DIMENSIONS.height,
+      })),
+      edges: edges
+        .filter((edge) => typeof edge.source === "string" && typeof edge.target === "string")
+        .map((edge) => ({
+          id: edge.id,
+          sources: [edge.source as string],
+          targets: [edge.target as string],
+        })),
+    };
+
+    try {
+      const layout = await elk.layout(graph);
+      const positions = new Map(
+        (layout.children ?? []).map((child) => [child.id, child] as const),
+      );
+
+      setNodes((current) =>
+        current.map((node) => {
+          const layoutNode = positions.get(node.id);
+          if (!layoutNode || layoutNode.x === undefined || layoutNode.y === undefined) {
+            return node;
+          }
+
+          return {
+            ...node,
+            position: {
+              x: layoutNode.x,
+              y: layoutNode.y,
+            },
+          };
+        }),
+      );
+
+      requestAnimationFrame(() => {
+        reactFlowInstance?.fitView({ padding: 0.2, duration: 600 });
+      });
+    } catch (error) {
+      setLayoutError(error instanceof Error ? error.message : "Auto-layout başarısız oldu.");
+    } finally {
+      setIsAutoLayoutRunning(false);
+    }
+  }, [edges, elk, isAutoLayoutRunning, nodes, reactFlowInstance, setNodes]);
+
   const handleToggleReadOnly = useCallback(() => {
     setYamlReadOnly((value) => !value);
   }, []);
@@ -369,33 +480,103 @@ function App(): JSX.Element {
 
       setNodes((current: FlowNode[]) => current.concat(newNode));
       setSelectedNodeId(nextId);
+      setLayoutError(null);
     },
     [nodes],
   );
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.getAttribute("contenteditable") === "true"
+        ) {
+          return;
+        }
+      }
+
+      const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "l") {
+        event.preventDefault();
+        void handleAutoLayout();
+      } else if (key === "f") {
+        event.preventDefault();
+        handleFitView();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [handleAutoLayout, handleFitView]);
+
+  useEffect(() => {
+    if (!reactFlowInstance) {
+      return;
+    }
+
+    reactFlowInstance.fitView({ padding: 0.24 });
+  }, [reactFlowInstance]);
+
   const toolboxInfo = selectedNodeSnapshot
     ? `Editing ${selectedNodeSnapshot.data.nodeType} • ${selectedNodeSnapshot.id}`
     : "Select a node to view its properties.";
+  const layoutMessage = isAutoLayoutRunning ? "Auto layout çalışıyor…" : layoutError;
+  const themeToggleLabel = theme === "dark" ? "Light mode" : "Dark mode";
 
   return (
     <ReactFlowProvider>
-      <div className="app-shell">
+      <div className={`app-shell theme-${theme}`}>
         <header className="app-header">
-          <div>
+          <div className="header-details">
             <h1>Workflow Agent Canvas</h1>
             <p>Create and synchronise workflow nodes with YAML definitions.</p>
+            <div className="header-shortcuts">Auto layout: Ctrl/Cmd + L · Fit view: Ctrl/Cmd + F</div>
           </div>
-          <div className="add-node-actions">
+          <div className="header-actions">
             <button
               type="button"
-              className="panel-primary"
+              className="toolbar-button"
+              onClick={() => void handleAutoLayout()}
+              disabled={isAutoLayoutRunning || nodes.length === 0}
+            >
+              {isAutoLayoutRunning ? "Auto layout…" : "Auto layout"}
+            </button>
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={handleFitView}
+              disabled={!reactFlowInstance}
+            >
+              Fit view
+            </button>
+            <button type="button" className="toolbar-button" onClick={handleToggleTheme}>
+              {themeToggleLabel}
+            </button>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <button
+              type="button"
+              className="toolbar-button toolbar-button--primary"
               onClick={() => handleAddNode("LoginFormComponent")}
             >
               + Login Form
             </button>
             <button
               type="button"
-              className="panel-primary"
+              className="toolbar-button toolbar-button--primary"
               onClick={() => handleAddNode("LoginAPIEndpoint")}
             >
               + Login API
@@ -405,7 +586,16 @@ function App(): JSX.Element {
 
         <main className="app-main">
           <div className="canvas-container">
-            <div className="toolbox-hint">{toolboxInfo}</div>
+            <div className="toolbox-hint">
+              <span>{toolboxInfo}</span>
+              {layoutMessage ? (
+                <span
+                  className={`toolbox-status ${layoutError ? "toolbox-status--error" : "toolbox-status--info"}`}
+                >
+                  {layoutMessage}
+                </span>
+              ) : null}
+            </div>
             <Canvas
               nodes={nodes}
               edges={edges}
@@ -413,6 +603,8 @@ function App(): JSX.Element {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onSelectionChange={onSelectionChange}
+              onInit={(instance) => setReactFlowInstance(instance)}
+              theme={theme}
             />
           </div>
 

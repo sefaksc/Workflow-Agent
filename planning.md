@@ -23,6 +23,7 @@
 - Webview UI: React + React Flow + Tailwind temalı modern görünüm, elkjs ile auto-layout
 - Python Engine: LlamaIndex Workflows ile node işleme ve kod üretimi
 - YAML v1 şeması + iki yönlü senkron (Canvas ↔ YAML)
+- Node’lar arası veri akışını modelleyerek ilgili API node'una form alanlarını taşıma (Sprint 4+ için planlanmış advanced workflow katmanı)
 - Chat Agent (VS Code Chat API) → doğal dilden akış kurma/çalıştırma
 - Dosya yazma, diff/önizleme, formatter (Prettier/ESLint)
 - Hata yönetimi, iptal, retry, telemetri (opsiyonel), dokümantasyon, örnekler
