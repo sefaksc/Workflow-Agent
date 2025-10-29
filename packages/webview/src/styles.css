@@ -1,0 +1,39 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #1f2933 0%, #0f172a 35%, #020617 100%);
+  color: #f9fafb;
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 3rem;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+}
+
+.app-header h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2.5rem;
+  letter-spacing: 0.06em;
+}
+
+.app-header p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #cbd5f5;
+}
+
+.app-body {
+  margin-top: 2rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 48rem;
+}

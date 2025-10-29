@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.log
+*.vsix
+*.pyc
+__pycache__/
+.env
+/.idea/
+/coverage/
+.DS_Store

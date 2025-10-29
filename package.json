@@ -1,0 +1,22 @@
+{
+  "name": "workflow-agent-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace workflow-agent-extension && npm run build --workspace workflow-agent-webview",
+    "lint": "npm run lint --workspace workflow-agent-extension && npm run lint --workspace workflow-agent-webview"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.7",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "typescript": "^5.4.2"
+  }
+}

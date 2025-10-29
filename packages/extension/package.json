@@ -1,0 +1,44 @@
+{
+  "name": "workflow-agent-extension",
+  "displayName": "Workflow Agent",
+  "description": "VS Code extension for building AI-assisted application workflows.",
+  "publisher": "workflow",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:workflowAgent.openWorkflowCanvas",
+    "onCommand:workflowAgent.runWorkflow"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "workflowAgent.openWorkflowCanvas",
+        "title": "Workflow Agent: Open Workflow Canvas"
+      },
+      {
+        "command": "workflowAgent.runWorkflow",
+        "title": "Workflow Agent: Run Workflow"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "npm run compile",
+    "compile": "tsc -p ./tsconfig.json",
+    "lint": "eslint \"./src/**/*.ts\"",
+    "watch": "tsc -w -p ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.7",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "tslib": "^2.6.2"
+  }
+}
