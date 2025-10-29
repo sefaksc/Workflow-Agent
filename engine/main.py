@@ -16,10 +16,11 @@ import sys
 import threading
 import time
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
-DEFAULT_RULES: Dict[str, Any] = {
+DEFAULT_RULES: dict[str, Any] = {
     "frontend": {"framework": "React", "language": "TS"},
     "backend": {"framework": "NodeExpress", "language": "TS"},
     "coding": {"formatter": "prettier", "style": "airbnb"},
@@ -48,7 +49,7 @@ class Engine:
     def __init__(self) -> None:
         self._writer_lock = threading.Lock()
         self._active_lock = threading.Lock()
-        self._active_run: Optional[RunContext] = None
+        self._active_run: RunContext | None = None
 
     def run(self) -> None:
         """Process incoming commands until stdin is closed."""
@@ -67,7 +68,7 @@ class Engine:
                 continue
             self._handle_message(message)
 
-    def _handle_message(self, message: Dict[str, Any]) -> None:
+    def _handle_message(self, message: dict[str, Any]) -> None:
         message_type = message.get("type")
         if message_type == "PING":
             self._emit({"type": "PONG"})
@@ -87,7 +88,7 @@ class Engine:
 
         self._emit_error(f"Unsupported message type: {message_type}")
 
-    def _handle_run_workflow(self, message: Dict[str, Any]) -> None:
+    def _handle_run_workflow(self, message: dict[str, Any]) -> None:
         correlation_id = str(message.get("correlationId") or "").strip()
         if not correlation_id:
             self._emit_error("RUN_WORKFLOW message must include a correlationId.")
@@ -115,7 +116,7 @@ class Engine:
             )
             thread.start()
 
-    def _handle_cancel(self, message: Dict[str, Any]) -> None:
+    def _handle_cancel(self, message: dict[str, Any]) -> None:
         correlation_id = str(message.get("correlationId") or "").strip()
         if not correlation_id:
             self._emit_log("Received CANCEL without correlationId.", level="warn")
@@ -125,13 +126,19 @@ class Engine:
             context = self._active_run
 
         if context is None or context.correlation_id != correlation_id:
-            self._emit_log(f"No active workflow run matches {correlation_id}; ignoring cancel.", level="warn")
+            self._emit_log(
+                f"No active workflow run matches {correlation_id}; ignoring cancel.",
+                level="warn",
+            )
             return
 
-        self._emit_log(f"Cancellation requested for {correlation_id}.", correlation_id=correlation_id)
+        self._emit_log(
+            f"Cancellation requested for {correlation_id}.",
+            correlation_id=correlation_id,
+        )
         context.cancel_event.set()
 
-    def _handle_chat_request(self, message: Dict[str, Any]) -> None:
+    def _handle_chat_request(self, message: dict[str, Any]) -> None:
         correlation_id = str(message.get("correlationId") or "").strip()
         if not correlation_id:
             self._emit_error("CHAT_REQUEST message must include a correlationId.")
@@ -147,8 +154,10 @@ class Engine:
         document = document if isinstance(document, dict) else {}
 
         nodes_payload = document.get("nodes")
-        nodes: List[Dict[str, Any]] = (
-            [node for node in nodes_payload if isinstance(node, dict)] if isinstance(nodes_payload, list) else []
+        nodes: list[dict[str, Any]] = (
+            [node for node in nodes_payload if isinstance(node, dict)]
+            if isinstance(nodes_payload, list)
+            else []
         )
 
         rules_payload = document.get("rules") if isinstance(document.get("rules"), dict) else None
@@ -161,13 +170,19 @@ class Engine:
         def contains(*tokens: str) -> bool:
             return any(token in prompt_lower or token in plain_prompt for token in tokens)
 
-        actions: List[Dict[str, Any]] = []
-        replies: List[str] = []
-        follow_ups: List[str] = []
+        actions: list[dict[str, Any]] = []
+        replies: list[str] = []
+        follow_ups: list[str] = []
         last_form_id: str | None = None
         last_api_id: str | None = None
 
-        if contains("new workflow", "reset workflow", "workflow'u sifirla", "workflowu sifirla", "yeni akis"):
+        if contains(
+            "new workflow",
+            "reset workflow",
+            "workflow'u sifirla",
+            "workflowu sifirla",
+            "yeni akis",
+        ):
             actions.append({"type": "new_workflow"})
             replies.append("Workflow'u sifirliyorum.")
             nodes = []
@@ -178,7 +193,9 @@ class Engine:
 
         if wants_form and mentions_add:
             node_id = self._suggest_node_id("LoginFormComponent", nodes)
-            actions.append({"type": "add_node", "nodeType": "LoginFormComponent", "nodeId": node_id})
+            actions.append(
+                {"type": "add_node", "nodeType": "LoginFormComponent", "nodeId": node_id}
+            )
             replies.append(f"{node_id} form dugumunu ekliyorum.")
             nodes.append({"id": node_id, "type": "LoginFormComponent"})
             last_form_id = node_id
@@ -237,9 +254,12 @@ class Engine:
             if updated_rules is not None and not rules_changed and updated_rules == original_rules:
                 replies.append("Kurallar zaten istediginiz sekilde ayarli.")
             else:
-                replies.append("Nasil yardimci olabilecegimi anlamadim. Ornek: \"Login form ekle ve API'ye bagla\" veya `/run`.")
+                replies.append(
+                    "Nasil yardimci olabilecegimi anlamadim. "
+                    'Ornek: "Login form ekle ve API\'ye bagla" veya `/run`.'
+                )
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "type": "CHAT_RESPONSE",
             "correlationId": correlation_id,
             "reply": replies,
@@ -253,7 +273,7 @@ class Engine:
     def _execute_run(
         self,
         correlation_id: str,
-        message: Dict[str, Any],
+        message: dict[str, Any],
         cancel_event: threading.Event,
     ) -> None:
         try:
@@ -301,10 +321,10 @@ class Engine:
 
     def _synthesise_files(
         self,
-        document: Optional[Dict[str, Any]],
-        yaml_text: Optional[str],
-    ) -> List[Dict[str, str]]:
-        files: List[Dict[str, str]] = []
+        document: dict[str, Any] | None,
+        yaml_text: str | None,
+    ) -> list[dict[str, str]]:
+        files: list[dict[str, str]] = []
         nodes = []
         if isinstance(document, dict):
             raw_nodes = document.get("nodes")
@@ -339,9 +359,9 @@ class Engine:
 
         return files
 
-    def _render_form_stub(self, node_id: str, props: Dict[str, Any]) -> str:
+    def _render_form_stub(self, node_id: str, props: dict[str, Any]) -> str:
         fields_raw = props.get("fields") if isinstance(props, dict) else None
-        fields: List[Dict[str, Any]] = []
+        fields: list[dict[str, Any]] = []
         if isinstance(fields_raw, list):
             fields = [field for field in fields_raw if isinstance(field, dict)]
 
@@ -378,18 +398,18 @@ class Engine:
 
         return "\n".join(lines)
 
-    def _render_api_stub(self, node_id: str, props: Dict[str, Any]) -> str:
+    def _render_api_stub(self, node_id: str, props: dict[str, Any]) -> str:
         method = str(props.get("method") or "POST")
         path = str(props.get("path") or "/")
         auth = str(props.get("auth") or "none")
         form_fields_raw = props.get("formFields")
         form_source_ids_raw = props.get("formSourceIds")
 
-        form_fields: List[Dict[str, Any]] = []
+        form_fields: list[dict[str, Any]] = []
         if isinstance(form_fields_raw, list):
             form_fields = [field for field in form_fields_raw if isinstance(field, dict)]
 
-        form_sources: List[str] = []
+        form_sources: list[str] = []
         if isinstance(form_source_ids_raw, list):
             form_sources = [str(source) for source in form_source_ids_raw]
 
@@ -439,14 +459,14 @@ class Engine:
 
         return "\n".join(lines)
 
-    def _render_yaml_snapshot(self, yaml_text: Optional[str]) -> str:
+    def _render_yaml_snapshot(self, yaml_text: str | None) -> str:
         if not yaml_text or not isinstance(yaml_text, str):
             return ""
         header = "# YAML snapshot generated by Workflow Agent sprint 4 engine stub\n"
         return header + yaml_text.strip() + ("\n" if not yaml_text.endswith("\n") else "")
 
-    def _produce_warnings(self, document: Optional[Dict[str, Any]]) -> List[str]:
-        warnings: List[str] = []
+    def _produce_warnings(self, document: dict[str, Any] | None) -> list[str]:
+        warnings: list[str] = []
         if not isinstance(document, dict):
             return warnings
         nodes = document.get("nodes")
@@ -469,17 +489,17 @@ class Engine:
         return warnings
 
     @staticmethod
-    def _clone_rules(rules: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def _clone_rules(rules: dict[str, Any] | None) -> dict[str, Any]:
         base = rules if isinstance(rules, dict) else DEFAULT_RULES
         return copy.deepcopy(base)
 
     @staticmethod
-    def _suggest_node_id(node_type: str, nodes: List[Dict[str, Any]]) -> str:
+    def _suggest_node_id(node_type: str, nodes: list[dict[str, Any]]) -> str:
         prefix = "LoginForm" if node_type == "LoginFormComponent" else "LoginAPI"
         existing_ids = {
             str(node.get("id"))
             for node in nodes
-            if isinstance(node, dict) and isinstance(node.get("id"), (str, int))
+            if isinstance(node, dict) and isinstance(node.get("id"), str | int)
         }
         index = 1
         while True:
@@ -489,14 +509,14 @@ class Engine:
             index += 1
 
     @staticmethod
-    def _first_node_id(node_type: str, nodes: List[Dict[str, Any]]) -> Optional[str]:
+    def _first_node_id(node_type: str, nodes: list[dict[str, Any]]) -> str | None:
         for node in nodes:
             if not isinstance(node, dict):
                 continue
             if node.get("type") != node_type:
                 continue
             node_id = node.get("id")
-            if isinstance(node_id, (str, int)):
+            if isinstance(node_id, str | int):
                 return str(node_id)
         return None
 
@@ -505,7 +525,7 @@ class Engine:
         normalised = unicodedata.normalize("NFKD", text)
         return normalised.encode("ascii", "ignore").decode("ascii")
 
-    def _emit(self, payload: Dict[str, Any]) -> None:
+    def _emit(self, payload: dict[str, Any]) -> None:
         with self._writer_lock:
             sys.stdout.write(json.dumps(payload))
             sys.stdout.write("\n")
@@ -524,11 +544,11 @@ class Engine:
     def _emit_complete(
         self,
         correlation_id: str,
-        files: List[Dict[str, str]],
-        warnings: Optional[List[str]] = None,
+        files: list[dict[str, str]],
+        warnings: list[str] | None = None,
         cancelled: bool = False,
     ) -> None:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "type": "COMPLETE",
             "correlationId": correlation_id,
             "files": files,
@@ -544,9 +564,9 @@ class Engine:
         message: str,
         *,
         level: str = "info",
-        correlation_id: Optional[str] = None,
+        correlation_id: str | None = None,
     ) -> None:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "type": "LOG",
             "level": level,
             "message": message,
@@ -555,8 +575,8 @@ class Engine:
             payload["correlationId"] = correlation_id
         self._emit(payload)
 
-    def _emit_error(self, message: str, correlation_id: Optional[str] = None) -> None:
-        payload: Dict[str, Any] = {
+    def _emit_error(self, message: str, correlation_id: str | None = None) -> None:
+        payload: dict[str, Any] = {
             "type": "ERROR",
             "message": message,
         }
@@ -569,7 +589,7 @@ class Engine:
         return "true" if value else "false"
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Workflow Agent engine stub")
     parser.add_argument(
         "--check",
