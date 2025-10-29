@@ -1,39 +1,369 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-family: "Segoe UI", system-ui, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #1f2933 0%, #0f172a 35%, #020617 100%);
-  color: #f9fafb;
   min-height: 100vh;
+  background: radial-gradient(circle at top, #1e293b 0%, #0f172a 45%, #020617 100%);
 }
 
 .app-shell {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding: 3rem;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
+  padding: 24px 32px;
+  gap: 24px;
+  box-sizing: border-box;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
 }
 
 .app-header h1 {
-  margin: 0 0 0.75rem;
-  font-size: 2.5rem;
-  letter-spacing: 0.06em;
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+  color: #f8fafc;
 }
 
 .app-header p {
+  margin: 6px 0 0;
+  color: #94a3b8;
+}
+
+.add-node-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas-container {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbox-hint {
+  padding: 12px 18px;
+  font-size: 0.95rem;
+  color: #cbd5f5;
+  background: rgba(51, 65, 85, 0.45);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.canvas-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.side-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.properties-panel,
+.yaml-panel {
+  background: rgba(15, 23, 42, 0.82);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+  overflow: auto;
+}
+
+.properties-panel h2,
+.yaml-panel h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+  color: #f8fafc;
+}
+
+.panel-placeholder {
+  color: #94a3b8;
   margin: 0;
-  font-size: 1.1rem;
+}
+
+.panel-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #cbd5f5;
+  margin-bottom: 4px;
+}
+
+.panel-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+
+.panel-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.panel-input--error {
+  border-color: #f87171;
+}
+
+.panel-error {
+  margin: 6px 0 0;
+  color: #fca5a5;
+  font-size: 0.8rem;
+}
+
+.panel-subheading {
+  margin: 18px 0 12px;
+  font-size: 1rem;
+  color: #f1f5f9;
+}
+
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-row--header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.panel-row--header h4 {
+  margin: 0;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 120px auto 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
   color: #cbd5f5;
 }
 
-.app-body {
-  margin-top: 2rem;
+.panel-icon {
+  border: none;
+  background: rgba(248, 113, 113, 0.15);
+  color: #fca5a5;
+  border-radius: 8px;
+  cursor: pointer;
+  height: 32px;
+}
+
+.panel-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.panel-primary,
+.panel-secondary,
+.panel-danger {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.panel-primary {
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  color: #0f172a;
+}
+
+.panel-secondary {
+  background: rgba(51, 65, 85, 0.6);
+  color: #e2e8f0;
+}
+
+.panel-danger {
+  margin-top: 20px;
+  background: rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+}
+
+.panel-primary:disabled,
+.panel-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.panel-primary:not(:disabled):hover,
+.panel-secondary:not(:disabled):hover,
+.panel-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
+}
+
+.node-card {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  min-width: 220px;
+}
+
+.node-wrapper {
+  position: relative;
+}
+
+.node-handle {
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.node-handle:hover {
+  transform: translateY(-50%) scale(1.1);
+}
+
+.node-handle--target {
+  left: -7px;
+}
+
+.node-handle--source {
+  right: -7px;
+}
+
+.node-card--selected {
+  border-color: #38bdf8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.3);
+}
+
+.node-card h3 {
+  margin: 0;
   font-size: 1.05rem;
-  line-height: 1.6;
-  max-width: 48rem;
+}
+
+.node-card p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #cbd5f5;
+}
+
+.yaml-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.yaml-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.yaml-editor {
+  width: 100%;
+  min-height: 220px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 0.92rem;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.yaml-editor:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
+}
+
+.yaml-error {
+  margin: 10px 0 0;
+  color: #fca5a5;
+  font-size: 0.85rem;
+}
+
+.yaml-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1280px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+
+  .side-panels {
+    flex-direction: row;
+  }
+
+  .properties-panel,
+  .yaml-panel {
+    flex: 1;
+  }
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .side-panels {
+    flex-direction: column;
+  }
 }
