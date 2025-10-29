@@ -18,13 +18,17 @@ import time
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-DEFAULT_RULES: dict[str, Any] = {
-    "frontend": {"framework": "React", "language": "TS"},
-    "backend": {"framework": "NodeExpress", "language": "TS"},
-    "coding": {"formatter": "prettier", "style": "airbnb"},
-}
+try:
+    from .workflow import DEFAULT_RULES, TemplateWorkflowRunner, WorkflowError
+except ImportError:
+    if __package__ in {None, ""}:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from engine.workflow import DEFAULT_RULES, TemplateWorkflowRunner, WorkflowError
+    else:
+        raise
 
 
 def _check_environment() -> dict[str, Any]:
@@ -50,6 +54,7 @@ class Engine:
         self._writer_lock = threading.Lock()
         self._active_lock = threading.Lock()
         self._active_run: RunContext | None = None
+        self._workflow_runner = TemplateWorkflowRunner()
 
     def run(self) -> None:
         """Process incoming commands until stdin is closed."""
@@ -304,8 +309,17 @@ class Engine:
                 self._emit_progress(correlation_id, step, pct)
                 time.sleep(0.05)
 
-            files = self._synthesise_files(document, yaml_text)
-            warnings = self._produce_warnings(document)
+            try:
+                workflow_result = self._workflow_runner.run(
+                    document if isinstance(document, dict) else None,
+                    yaml_text if isinstance(yaml_text, str) else None,
+                )
+            except WorkflowError as error:
+                self._emit_error(str(error), correlation_id=correlation_id)
+                return
+
+            files = workflow_result.files
+            warnings = workflow_result.warnings
 
             if cancel_event.is_set():
                 self._emit_complete(correlation_id, [], cancelled=True)
@@ -318,175 +332,6 @@ class Engine:
         finally:
             with self._active_lock:
                 self._active_run = None
-
-    def _synthesise_files(
-        self,
-        document: dict[str, Any] | None,
-        yaml_text: str | None,
-    ) -> list[dict[str, str]]:
-        files: list[dict[str, str]] = []
-        nodes = []
-        if isinstance(document, dict):
-            raw_nodes = document.get("nodes")
-            if isinstance(raw_nodes, list):
-                nodes = raw_nodes
-
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-            node_id = str(node.get("id") or "Node")
-            node_type = node.get("type")
-            props = node.get("props") if isinstance(node.get("props"), dict) else {}
-
-            if node_type == "LoginFormComponent":
-                files.append(
-                    {
-                        "path": f"frontend/{node_id}.tsx",
-                        "content": self._render_form_stub(node_id, props),
-                    }
-                )
-            elif node_type == "LoginAPIEndpoint":
-                files.append(
-                    {
-                        "path": f"backend/{node_id}.ts",
-                        "content": self._render_api_stub(node_id, props),
-                    }
-                )
-
-        yaml_snapshot = self._render_yaml_snapshot(yaml_text)
-        if yaml_snapshot:
-            files.append({"path": "workflow/workflow.yaml", "content": yaml_snapshot})
-
-        return files
-
-    def _render_form_stub(self, node_id: str, props: dict[str, Any]) -> str:
-        fields_raw = props.get("fields") if isinstance(props, dict) else None
-        fields: list[dict[str, Any]] = []
-        if isinstance(fields_raw, list):
-            fields = [field for field in fields_raw if isinstance(field, dict)]
-
-        lines = [
-            f"// Auto-generated stub for {node_id}",
-            "// This file is produced by the Workflow Agent sprint 4 engine stub.",
-            "",
-            "export interface FieldDescriptor {",
-            '  name: string;',
-            '  type: "string" | "password" | "email";',
-            "  required: boolean;",
-            "}",
-            "",
-            f"export const {node_id}Fields: FieldDescriptor[] = [",
-        ]
-
-        for field in fields:
-            name = str(field.get("name") or "field")
-            field_type = str(field.get("type") or "string")
-            required = self._js_bool(bool(field.get("required")))
-            lines.append(
-                f'  {{ name: "{name}", type: "{field_type}", required: {required} }},'
-            )
-
-        lines.extend(
-            [
-                "];",
-                "",
-                "export function renderForm(): FieldDescriptor[] {",
-                "  return [..." + node_id + "Fields];",
-                "}",
-            ]
-        )
-
-        return "\n".join(lines)
-
-    def _render_api_stub(self, node_id: str, props: dict[str, Any]) -> str:
-        method = str(props.get("method") or "POST")
-        path = str(props.get("path") or "/")
-        auth = str(props.get("auth") or "none")
-        form_fields_raw = props.get("formFields")
-        form_source_ids_raw = props.get("formSourceIds")
-
-        form_fields: list[dict[str, Any]] = []
-        if isinstance(form_fields_raw, list):
-            form_fields = [field for field in form_fields_raw if isinstance(field, dict)]
-
-        form_sources: list[str] = []
-        if isinstance(form_source_ids_raw, list):
-            form_sources = [str(source) for source in form_source_ids_raw]
-
-        lines = [
-            f"// Auto-generated stub for {node_id}",
-            "// Derived from the workflow graph; replace with real implementation.",
-            f"// Endpoint: {method} {path}",
-            f"// Authentication: {auth}",
-            "",
-            "interface RequestField {",
-            "  name: string;",
-            "  type: string;",
-            "  required: boolean;",
-            "}",
-            "",
-            "interface GeneratedRequestSchema {",
-            "  fields: RequestField[];",
-            "  sourceForms: string[];",
-            "}",
-            "",
-            "export const requestSchema: GeneratedRequestSchema = {",
-            "  fields: [",
-        ]
-
-        for field in form_fields:
-            name = str(field.get("name") or "field")
-            field_type = str(field.get("type") or "string")
-            required = self._js_bool(bool(field.get("required")))
-            lines.append(
-                f'    {{ name: "{name}", type: "{field_type}", required: {required} }},'
-            )
-
-        lines.append("  ],")
-
-        source_list = ", ".join(f'"{source}"' for source in form_sources)
-        lines.extend(
-            [
-                f"  sourceForms: [{source_list}],",
-                "};",
-                "",
-                f"export function register{node_id}Route(app: unknown): void {{",
-                f'  console.log("Registering {node_id} with", requestSchema);',
-                "  void app;",
-                "}",
-            ]
-        )
-
-        return "\n".join(lines)
-
-    def _render_yaml_snapshot(self, yaml_text: str | None) -> str:
-        if not yaml_text or not isinstance(yaml_text, str):
-            return ""
-        header = "# YAML snapshot generated by Workflow Agent sprint 4 engine stub\n"
-        return header + yaml_text.strip() + ("\n" if not yaml_text.endswith("\n") else "")
-
-    def _produce_warnings(self, document: dict[str, Any] | None) -> list[str]:
-        warnings: list[str] = []
-        if not isinstance(document, dict):
-            return warnings
-        nodes = document.get("nodes")
-        if not isinstance(nodes, list):
-            return warnings
-
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-            if node.get("type") != "LoginAPIEndpoint":
-                continue
-            props = node.get("props")
-            form_fields = []
-            if isinstance(props, dict):
-                raw_form_fields = props.get("formFields")
-                if isinstance(raw_form_fields, list):
-                    form_fields = [field for field in raw_form_fields if isinstance(field, dict)]
-            if not form_fields:
-                warnings.append(f"{node.get('id', 'API')} has no form inputs connected.")
-        return warnings
 
     @staticmethod
     def _clone_rules(rules: dict[str, Any] | None) -> dict[str, Any]:
@@ -583,10 +428,6 @@ class Engine:
         if correlation_id:
             payload["correlationId"] = correlation_id
         self._emit(payload)
-
-    @staticmethod
-    def _js_bool(value: bool) -> str:
-        return "true" if value else "false"
 
 
 def main(argv: list[str] | None = None) -> int:

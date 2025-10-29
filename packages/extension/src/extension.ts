@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 import { EngineClient } from "./engineClient";
 import { registerChatAgent } from "./chatAgent";
 import { WorkflowPanelManager } from "./panelManager";
-import { WorkflowStore, isWorkflowUpdateMessage } from "./workflowStore";
+import { WorkflowStore, isWorkflowRunMessage, isWorkflowUpdateMessage } from "./workflowStore";
 
 const workflowStore = new WorkflowStore();
 const panelManager = new WorkflowPanelManager();
@@ -57,6 +57,11 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.webview.onDidReceiveMessage((message: unknown) => {
         if (isWorkflowUpdateMessage(message)) {
           workflowStore.update(message.payload);
+          return;
+        }
+
+        if (isWorkflowRunMessage(message)) {
+          void vscode.commands.executeCommand("workflowAgent.runWorkflow");
         }
       });
 

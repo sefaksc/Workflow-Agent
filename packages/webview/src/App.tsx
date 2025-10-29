@@ -688,6 +688,10 @@ function App(): JSX.Element {
     reactFlowInstance.fitView({ padding: 0.24 });
   }, [reactFlowInstance]);
 
+  const handleRunWorkflow = useCallback(() => {
+    postMessage({ type: "workflow/run" });
+  }, []);
+
   const toolboxInfo = selectedNodeSnapshot
     ? `Editing ${selectedNodeSnapshot.data.nodeType} • ${selectedNodeSnapshot.id}`
     : "Select a node to view its properties.";
@@ -745,13 +749,23 @@ function App(): JSX.Element {
           <div className="canvas-container">
             <div className="toolbox-hint">
               <span>{toolboxInfo}</span>
-              {layoutMessage ? (
-                <span
-                  className={`toolbox-status ${layoutError ? "toolbox-status--error" : "toolbox-status--info"}`}
+              <div className="toolbox-controls">
+                {layoutMessage ? (
+                  <span
+                    className={`toolbox-status ${layoutError ? "toolbox-status--error" : "toolbox-status--info"}`}
+                  >
+                    {layoutMessage}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="toolbox-button"
+                  onClick={handleRunWorkflow}
+                  disabled={nodes.length === 0}
                 >
-                  {layoutMessage}
-                </span>
-              ) : null}
+                  Run Workflow
+                </button>
+              </div>
             </div>
             <Canvas
               nodes={nodes}

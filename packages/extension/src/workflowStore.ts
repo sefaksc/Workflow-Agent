@@ -67,12 +67,16 @@ export interface WorkflowSnapshot {
   generatedAt: string;
 }
 
-export type WebviewMessage = {
-  type: "workflow/update";
-  payload: WorkflowSnapshot;
-};
+export type WebviewMessage =
+  | {
+      type: "workflow/update";
+      payload: WorkflowSnapshot;
+    }
+  | {
+      type: "workflow/run";
+    };
 
-export function isWorkflowUpdateMessage(message: unknown): message is WebviewMessage {
+export function isWorkflowUpdateMessage(message: unknown): message is Extract<WebviewMessage, { type: "workflow/update" }> {
   if (
     typeof message !== "object" ||
     message === null ||
@@ -92,6 +96,10 @@ export function isWorkflowUpdateMessage(message: unknown): message is WebviewMes
   } catch {
     return false;
   }
+}
+
+export function isWorkflowRunMessage(message: unknown): message is Extract<WebviewMessage, { type: "workflow/run" }> {
+  return typeof message === "object" && message !== null && (message as Record<string, unknown>).type === "workflow/run";
 }
 
 function validateWorkflowSnapshot(snapshot: WorkflowSnapshot): void {

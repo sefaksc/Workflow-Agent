@@ -8,6 +8,9 @@ export type OutboundWebviewMessage =
         yaml: string;
         generatedAt: string;
       };
+    }
+  | {
+      type: "workflow/run";
     };
 
 const vscodeApi =
